@@ -2,33 +2,51 @@ import Foundation
 
 /// PlausibleSwift is an implementation of the Plausible Analytics REST events API as described here: https://plausible.io/docs/events-api
 public struct PlausibleSwift {
-    public private(set) var domain = ""
     
-    private let PlausibleAPIEventURL = URL(string: "https://plausible.io/api/event")!
+    /// The domain configured for analytics inside Plausible eg `app://5calls.org`
+    ///
+    /// Must begin with one of  `http://`, `https://` or `app://`.
+    public private(set) var domain: URL
+    
+    private var domainHost: String
+    
+    /// The Plausible server.
+    private var server: URL
+    
+    private var plausibleAPIEventURL: URL {
+        return server.appendingPathComponent("/api/event")
+    }
 
-    /// Initializes a plausible object used for sending events to Plausible.io
-    /// Throws a `invalidDomain` error if the domain you pass cannot be turned into a URL
+    /// Initializes a plausible object used for sending events to the Plausible server.
+    /// Throws an `invalidServer` or `invalidDomain` error if the server or domain you pass
+    /// cannot be turned into a URL
     /// - Parameters:
-    ///     - domain: a fully qualified domain representing a site you have set up on plausible.io, such as `5calls.org`
-    public init(domain: String) throws {
+    ///     - server: the Plausible server. Defaults to the hosted Plausible service.
+    ///     - domain: a fully qualified domain (including scheme) representing a site you have set up in Plausible, such as `app://5calls.org`.
+    public init(server: String = "https://plausible.io", domain: String) throws {
+        // ensure correctness of the server and domain
+        guard let serverUrl = URL(string: server),
+            ["http", "https"].contains(serverUrl.scheme) else {
+            throw PlausibleError.invalidServer
+        }
+        
         // try to craft a URL out of our domain to ensure correctness
-        guard let _ = URL(string: "https://\(domain)") else {
+        guard let domainUrl = URL(string: domain),
+            ["http", "https", "app"].contains(domainUrl.scheme),
+            let domainHost = domainUrl.host else {
             throw PlausibleError.invalidDomain
         }
         
-        self.domain = domain
+        self.server = serverUrl
+        self.domain = domainUrl
+        self.domainHost = domainHost
     }
     
     /// Sends a pageview event to Plausible for the specified path
     /// - Parameters:
     ///     - path: a URL path to use as the pageview location (as if it was viewed on a website). There doesn't have to be anything served at this URL.
     ///     - properties: (optional) a dictionary of key-value pairs that will be attached to this event
-    /// Throws a `domainNotSet` error if it has been configured with an empty domain
-    public func trackPageview(path: String, properties: [String: String] = [:]) throws {
-        guard self.domain != "" else {
-            throw PlausibleError.domainNotSet
-        }
-        
+    public func trackPageview(path: String, properties: [String: String] = [:]) {
         plausibleRequest(name: "pageview", path: path, properties: properties)
     }
 
@@ -37,8 +55,7 @@ public struct PlausibleSwift {
     ///     - event: an arbitrary event name for your analytics.
     ///     - path: a URL path to use as the pageview location (as if it was viewed on a website). There doesn't have to be anything served at this URL.
     ///     - properties: (optional) a dictionary of key-value pairs that will be attached to this event
-    /// Throws a `domainNotSet` error if it has been configured with an empty domain.
-    /// Throws a `eventIsPageview` error if you try to specific the event name as `pageview` which may indicate that you're holding it wrong.
+    /// Throws an `eventIsPageview` error if you try to specific the event name as `pageview` which may indicate that you're holding it wrong.
     public func trackEvent(event: String, path: String, properties: [String: String] = [:]) throws {
         guard event != "pageview" else {
             throw PlausibleError.eventIsPageview
@@ -48,11 +65,16 @@ public struct PlausibleSwift {
     }
     
     private func plausibleRequest(name: String, path: String, properties: [String: String]) {
-        var req = URLRequest(url: PlausibleAPIEventURL)
+        var req = URLRequest(url: plausibleAPIEventURL)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        var jsonObject: [String: Any] = ["name": name,"url": constructPageviewURL(path: path),"domain": domain]
+        var jsonObject: [String: Any] = [
+            "name": name,
+            "url": constructPageviewURL(path: path),
+            "domain": domainHost
+        ]
+        
         if !properties.isEmpty {
             jsonObject["props"] = properties
         }
@@ -72,15 +94,13 @@ public struct PlausibleSwift {
     }
     
     internal func constructPageviewURL(path: String) -> String {
-        let url = URL(string: "https://\(domain)")!
-
         // TODO: replace with iOS 16-only path methods at some point
-        return url.appendingPathComponent(path).absoluteString
+        return domain.appendingPathComponent(path).absoluteString
     }
 }
 
 public enum PlausibleError: Error {
-    case domainNotSet
+    case invalidServer
     case invalidDomain
     case eventIsPageview
 }

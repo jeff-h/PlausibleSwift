@@ -20,6 +20,35 @@ final class PlausibleSwiftTests: XCTestCase {
         }
     }
     
+    func testInitWithCustomServer() {
+        do {
+            _ = try PlausibleSwift(server: "https://plausible.example.com", domain: "app://com.example.myapp")
+        } catch {
+            assertionFailure("failed to create a plausible object with a custom server")
+        }
+    }
+
+    func testInvalidServer() {
+        do {
+            _ = try PlausibleSwift(server: "plausible.example.com", domain: "app://com.example.myapp")
+            assertionFailure("bad server should have failed")
+        } catch let err as PlausibleError {
+            assert(err == PlausibleError.invalidServer, "server should be invalid")
+        } catch {
+            assertionFailure("some other unknown error while init with a bad domain")
+        }
+    }
+
+    func testAppSchemeDomain() {
+        do {
+            let plausible = try PlausibleSwift(domain: "app://com.example.myapp")
+            let urlString = plausible.constructPageviewURL(path: "/settings")
+            assert(urlString == "app://com.example.myapp/settings", "pageview url was \(urlString)")
+        } catch {
+            assertionFailure("failed to create a plausible object with app:// scheme")
+        }
+    }
+
     func testSinglePathConstruction() {
         let plausible = try! PlausibleSwift(domain: "5calls.org")
         
@@ -40,4 +69,5 @@ final class PlausibleSwiftTests: XCTestCase {
         let urlString = plausible.constructPageviewURL(path: "all")
         assert(urlString == "https://5calls.org/all", "pageview url was \(urlString)")
     }
+    
 }
